@@ -1,3 +1,4 @@
+/// This example takes a markdown input and logs pulldown cmark events in it
 use pulldown_cmark::{Event, Parser, TextMergeStream};
 use std::{env::args, fs::File, io::Read, path::PathBuf};
 

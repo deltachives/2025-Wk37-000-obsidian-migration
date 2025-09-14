@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+itertools = "0.14.0"
 pulldown-cmark = "0.13.0"
+lan_rs_common = { git = "https://github.com/LanHikari22/lan_rs_common", version = "0.1.0", features = ["incl_io", "use_ron", "use_glob"] }
+tap = "1.0.1"
+log = "0.4.28"
+fstdout-logger = "0.1.1"
