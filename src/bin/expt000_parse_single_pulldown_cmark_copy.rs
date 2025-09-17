@@ -24,49 +24,22 @@ fn main() {
     let iter = TextMergeStream::new(parser);
 
     for event in iter {
-
         println!("Event {event:?}");
 
         match event {
-            Event::Start(_tag) => {
-
-            },
-            Event::End(_tag_end) => {
-
-            },
-            Event::Text(_cow_str) => {
-
-            },
-            Event::Code(_cow_str) => {
-
-            },
-            Event::InlineMath(_cow_str) => {
-
-            },
-            Event::DisplayMath(_cow_str) => {
-
-            },
-            Event::Html(_cow_str) => {
-
-            },
-            Event::InlineHtml(_cow_str) => {
-
-            },
-            Event::FootnoteReference(_cow_str) => {
-
-            },
-            Event::SoftBreak => {
-
-            },
-            Event::HardBreak => {
-
-            },
-            Event::Rule => {
-
-            },
-            Event::TaskListMarker(_) => {
-
-            },
+            Event::Start(_tag) => {}
+            Event::End(_tag_end) => {}
+            Event::Text(_cow_str) => {}
+            Event::Code(_cow_str) => {}
+            Event::InlineMath(_cow_str) => {}
+            Event::DisplayMath(_cow_str) => {}
+            Event::Html(_cow_str) => {}
+            Event::InlineHtml(_cow_str) => {}
+            Event::FootnoteReference(_cow_str) => {}
+            Event::SoftBreak => {}
+            Event::HardBreak => {}
+            Event::Rule => {}
+            Event::TaskListMarker(_) => {}
         }
     }
 }

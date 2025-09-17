@@ -10,3 +10,4 @@ lan_rs_common = { git = "https://github.com/LanHikari22/lan_rs_common", version 
 tap = "1.0.1"
 log = "0.4.28"
 fstdout-logger = "0.1.1"
+thiserror = "2.0.16"

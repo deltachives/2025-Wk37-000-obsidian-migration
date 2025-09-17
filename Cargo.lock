@@ -270,6 +270,7 @@ dependencies = [
  "log",
  "pulldown-cmark",
  "tap",
+ "thiserror",
 ]
 
 [[package]]
