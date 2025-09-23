@@ -8,27 +8,44 @@ use std::{
     str::FromStr,
 };
 use tap::prelude::*;
+use text_diff::diff;
 use thiserror::Error;
 
+#[derive(Debug)]
 pub enum CategorizedDirEntry {
     Dir(DirEntry),
     File(DirEntry),
     Symlink(DirEntry),
 }
 
-pub fn get_and_categorize_dir_entries(path: &Path) -> Result<Vec<CategorizedDirEntry>, String> {
-    let dir = path.read_dir().map_err(|e| e.to_string())?;
+#[derive(Error, Debug)]
+pub enum GetAndCategorizeDirEntriesAssertError {
+    #[error("Unrecognized metadata category for {0:?}")]
+    UnrecognizedMetadaCategory(PathBuf),
+}
 
-    let dir_entries = dir
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+#[derive(Error, Debug)]
+pub enum GetAndCategorizeDirEntriesError {
+    #[error("Failed io operation: {0:?}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Assert error: {0:?}")]
+    AssertError(#[from] GetAndCategorizeDirEntriesAssertError),
+}
+
+pub fn get_and_categorize_dir_entries(
+    path: &Path,
+) -> Result<Vec<CategorizedDirEntry>, GetAndCategorizeDirEntriesError> {
+    let dir = path.read_dir()?;
+
+    let dir_entries = dir.collect::<Result<Vec<_>, _>>()?;
 
     let categorized = dir_entries
         .into_iter()
         .map(|entry| {
-            let metadata = entry.metadata().map_err(|e| e.to_string())?;
+            let metadata = entry.metadata()?;
 
-            let res_categorized: Result<CategorizedDirEntry, String> = {
+            let res_categorized: Result<CategorizedDirEntry, GetAndCategorizeDirEntriesError> = {
                 if metadata.is_dir() {
                     Ok(CategorizedDirEntry::Dir(entry))
                 } else if metadata.is_file() {
@@ -36,9 +53,10 @@ pub fn get_and_categorize_dir_entries(path: &Path) -> Result<Vec<CategorizedDirE
                 } else if metadata.is_symlink() {
                     Ok(CategorizedDirEntry::Symlink(entry))
                 } else {
-                    Err(format!(
-                        "Assertion failed: Unrecognized metadata category for {:?}",
-                        entry.path()
+                    Err(GetAndCategorizeDirEntriesError::AssertError(
+                        GetAndCategorizeDirEntriesAssertError::UnrecognizedMetadaCategory(
+                            entry.path(),
+                        ),
                     ))
                 }
             };
@@ -138,6 +156,40 @@ pub fn render_events_to_common_markdown<'a>(
     )?;
 
     Ok(mut_out)
+}
+
+/// Applies some fixes to rendered markdown files to be obsidian compliant. This is quite adhoc and
+/// not a complete conversion.
+pub fn fix_rendered_markdown_output_for_obsidian(old_content: &str, new_content: &str) -> String {
+    let (_, changeset) = diff(old_content, new_content, "");
+
+    let mut mut_out = String::new();
+
+    for change in changeset {
+        match change {
+            text_diff::Difference::Same(s) => mut_out += &s,
+            text_diff::Difference::Add(s) => {
+                // In general, we want to add additions from new content
+                // But in some cases, they add unnecessary escaping, or change the codeblock tick to 4 ticks
+                // It may add ## for frontmatter
+                if s != "\\" && s.trim() != "" && s.trim() != "`" && s.trim() != "##" {
+                    // trace!("Adding removal \"{s}\"");
+                    mut_out += &s;
+                }
+            }
+            text_diff::Difference::Rem(s) => {
+                // In general, we don't want to be adding additions from old content
+                // But in some cases, they escape \| in links in tables for example.
+                // We want to keep frontmatter in tact
+                if s == "\\" || s.trim() == "---" {
+                    // trace!("Adding addition \"{s}\"");
+                    mut_out += &s;
+                }
+            }
+        }
+    }
+
+    mut_out
 }
 
 pub fn parse_markdown_file<'a>(content: &'a str) -> Vec<Event<'a>> {

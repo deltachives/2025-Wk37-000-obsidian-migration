@@ -35,14 +35,28 @@ fn parse_args() -> ArgMatches {
         .get_matches()
 }
 
+fn skip_processing_managed_path(path: &Path) -> bool {
+    let filename = path.file_name().unwrap().to_string_lossy();
+
+    filename.contains("excalidraw") || filename.contains("Kanban")
+}
+
 fn app_writeback(vault_path: &ObsidianVaultPath) {
     let process_markdown_file = |path: &Path| -> Option<()> {
+        // Some markdown files managed by extensions and should be skipped
+        if skip_processing_managed_path(path) {
+            return Some(());
+        }
+
         let content = common::read_file_content(path).expect("Could not read content");
 
         let events = common::parse_markdown_file(&content);
 
         let new_content = common::render_events_to_common_markdown(&events)
-            .expect("Failed to render back to common markdown");
+            .expect("Failed to render back to common markdown")
+            .pipe(|new_content| {
+                common::fix_rendered_markdown_output_for_obsidian(&content, &new_content)
+            });
 
         common::write_file_content(&new_content, path).expect("Failed to write file content");
 
@@ -56,6 +70,11 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
     info!("value_path: {vault_path:?}");
 
     let process_markdown_file = |path: &Path| -> Option<()> {
+        // Some markdown files managed by extensions and should be skipped
+        if skip_processing_managed_path(path) {
+            return Some(());
+        }
+
         let content = common::read_file_content(path).expect("Could not read content");
 
         let events = common::parse_markdown_file(&content);
