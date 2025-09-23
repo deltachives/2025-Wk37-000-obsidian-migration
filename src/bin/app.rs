@@ -37,8 +37,14 @@ fn parse_args() -> ArgMatches {
 
 fn skip_processing_managed_path(path: &Path) -> bool {
     let filename = path.file_name().unwrap().to_string_lossy();
+    let pathname = format!("{path:?}");
 
-    filename.contains("excalidraw") || filename.contains("Kanban")
+    filename.contains("excalidraw")
+        || filename.contains("Kanban")
+        || filename.contains("Summarize")
+        || filename.contains("Summary")
+        || filename.contains("Timeline")
+        || pathname.contains("templater")
 }
 
 fn app_writeback(vault_path: &ObsidianVaultPath) {
@@ -55,7 +61,7 @@ fn app_writeback(vault_path: &ObsidianVaultPath) {
         let new_content = common::render_events_to_common_markdown(&events)
             .expect("Failed to render back to common markdown")
             .pipe(|new_content| {
-                common::fix_rendered_markdown_output_for_obsidian(&content, &new_content)
+                common::adhoc_fix_rendered_markdown_output_for_obsidian(&content, &new_content)
             });
 
         common::write_file_content(&new_content, path).expect("Failed to write file content");

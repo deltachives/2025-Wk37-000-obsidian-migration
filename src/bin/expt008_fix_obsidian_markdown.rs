@@ -18,7 +18,7 @@ fn main() {
     let new_content = common::render_events_to_common_markdown(&events)
         .expect("Failed to render back to common markdown")
         .pipe(|new_content| {
-            common::fix_rendered_markdown_output_for_obsidian(&content, &new_content)
+            common::adhoc_fix_rendered_markdown_output_for_obsidian(&content, &new_content)
         });
 
     println!("{new_content}");

@@ -39,12 +39,15 @@ fn main() {
     for change in changeset {
         match change {
             text_diff::Difference::Same(s) => {
+                log::trace!("0 .");
                 print!("{ANSI_ESCAPE_COLOR_YELLOW}\"{s}\"{ANSI_ESCAPE_RESET}");
             }
             text_diff::Difference::Add(s) => {
+                log::trace!("1 +");
                 print!("{ANSI_ESCAPE_COLOR_GREEN}\"{s}\"{ANSI_ESCAPE_RESET}");
             }
             text_diff::Difference::Rem(s) => {
+                log::trace!("2 -");
                 print!("{ANSI_ESCAPE_COLOR_RED}\"{s}\"{ANSI_ESCAPE_RESET}");
             }
         }

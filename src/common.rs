@@ -145,7 +145,7 @@ pub fn render_events_to_common_markdown<'a>(
             newlines_after_blockquote: 2,
             newlines_after_rest: 1,
             newlines_after_metadata: 1,
-            code_block_token_count: 4,
+            code_block_token_count: 3,
             code_block_token: '`',
             list_token: '-',
             ordered_list_token: '.',
@@ -159,8 +159,11 @@ pub fn render_events_to_common_markdown<'a>(
 }
 
 /// Applies some fixes to rendered markdown files to be obsidian compliant. This is quite adhoc and
-/// not a complete conversion.
-pub fn fix_rendered_markdown_output_for_obsidian(old_content: &str, new_content: &str) -> String {
+/// is likely not exhaustive.
+pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
+    old_content: &str,
+    new_content: &str,
+) -> String {
     let (_, changeset) = diff(old_content, new_content, "");
 
     let mut mut_out = String::new();
@@ -169,27 +172,49 @@ pub fn fix_rendered_markdown_output_for_obsidian(old_content: &str, new_content:
         match change {
             text_diff::Difference::Same(s) => mut_out += &s,
             text_diff::Difference::Add(s) => {
-                // In general, we want to add additions from new content
-                // But in some cases, they add unnecessary escaping, or change the codeblock tick to 4 ticks
-                // It may add ## for frontmatter
-                if s != "\\" && s.trim() != "" && s.trim() != "`" && s.trim() != "##" {
-                    // trace!("Adding removal \"{s}\"");
+                // In general, we want to add additions from new content. Some exceptions:
+                // - They add unnecessary escaping
+                // - They mess up frontmatter by adding `##` for the first property
+                // - In some instances, math is changes by removing `_` for `*`.
+                // - extra quote ">" lines are added and they shouldn't be
+                // - In case of subtask - [ ] , they may change them to - \[ ] with "- \\". This needs to be modified.
+                //   Note that this is for the setting of using "-" bullets for markdown rendering.
+
+                if s.trim() != "\\"
+                    && s.trim() != ""
+                    && s.trim() != "##"
+                    && s.trim() != "*"
+                    && s.trim() != ">"
+                    && s.trim() != "- \\"
+                {
+                    // log::trace!("+0 \"{s}\"");
                     mut_out += &s;
+                } else if s.trim() == "- \\" {
+                    // log::trace!("+1 \"{s}\"");
+                    mut_out += &s.replace("\\", "");
+                } else {
+                    // log::trace!("+2 \"{s}\"");
                 }
             }
             text_diff::Difference::Rem(s) => {
-                // In general, we don't want to be adding additions from old content
-                // But in some cases, they escape \| in links in tables for example.
-                // We want to keep frontmatter in tact
-                if s == "\\" || s.trim() == "---" {
-                    // trace!("Adding addition \"{s}\"");
+                // In general, we don't want to be adding additions from old content. Some exceptions:
+                // - Obsidian sometimes adds escaping. For example for obsidian link title bars in tables.
+                // - Keep obsidian frontmatter "---" intact
+                // - Keep `_` which may be added in math
+
+                if s.trim() == "\\" || s.trim() == "---" || s.trim() == "_" {
+                    log::trace!("-0 \"{s}\"");
                     mut_out += &s;
+                } else {
+                    log::trace!("-1 \"{s}\"");
                 }
             }
         }
     }
 
     mut_out
+    // new_content.to_string()
+    // "".to_string()
 }
 
 pub fn parse_markdown_file<'a>(content: &'a str) -> Vec<Event<'a>> {
