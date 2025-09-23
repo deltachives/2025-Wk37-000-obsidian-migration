@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd, TextMergeStream};
+use pulldown_cmark_to_cmark::cmark_with_options;
 use std::{
     fs::{DirEntry, File},
     io::Read,
@@ -93,6 +94,50 @@ pub fn read_file_content(path: &Path) -> Option<String> {
     };
 
     Some(content)
+}
+
+pub fn write_file_content(s: &str, output_path: &Path) -> std::io::Result<usize> {
+    let mut file = std::fs::File::create(output_path)?;
+
+    std::io::Write::write(&mut file, s.as_bytes())
+}
+
+#[derive(Error, Debug)]
+pub enum RenderEventsToCommonMarkdownError {
+    #[error("Failed to convert events back to cmark: {0:?}")]
+    PulldownCmarkToCmarkError(#[from] pulldown_cmark_to_cmark::Error),
+}
+
+pub fn render_events_to_common_markdown<'a>(
+    events: &'a [Event<'a>],
+) -> Result<String, RenderEventsToCommonMarkdownError> {
+    let mut mut_out = String::new();
+
+    let _ = cmark_with_options(
+        events.iter(),
+        &mut mut_out,
+        pulldown_cmark_to_cmark::Options {
+            newlines_after_headline: 2,
+            newlines_after_paragraph: 2,
+            newlines_after_codeblock: 2,
+            newlines_after_htmlblock: 1,
+            newlines_after_table: 2,
+            newlines_after_rule: 2,
+            newlines_after_list: 2,
+            newlines_after_blockquote: 2,
+            newlines_after_rest: 1,
+            newlines_after_metadata: 1,
+            code_block_token_count: 4,
+            code_block_token: '`',
+            list_token: '-',
+            ordered_list_token: '.',
+            increment_ordered_list_bullets: true,
+            emphasis_token: '*',
+            strong_token: "**",
+        },
+    )?;
+
+    Ok(mut_out)
 }
 
 pub fn parse_markdown_file<'a>(content: &'a str) -> Vec<Event<'a>> {

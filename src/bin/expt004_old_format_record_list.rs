@@ -1,11 +1,13 @@
 use migration_rs::*;
-use std::path::PathBuf;
+use std::path::Path;
 
 fn main() {
-    let vault_folder = drivers::init_logging_and_get_obsidian_vault();
-    let opt_note_path = drivers::get_opt_arg_note_path();
+    drivers::init_logging_with_level(log::LevelFilter::Trace);
 
-    let process_markdown_file = |path: &PathBuf, only_summarize: bool| -> Option<()> {
+    let vault_folder = drivers::get_obsidian_vault(1);
+    let opt_note_path = drivers::get_opt_arg_note_path(2);
+
+    let process_markdown_file = |path: &Path, only_summarize: bool| -> Option<()> {
         let content = common::read_file_content(path).expect("Could not read content");
 
         let events = common::parse_markdown_file(&content);

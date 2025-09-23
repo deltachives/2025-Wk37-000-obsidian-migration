@@ -9,5 +9,7 @@ pulldown-cmark = "0.13.0"
 lan_rs_common = { git = "https://github.com/LanHikari22/lan_rs_common", version = "0.1.0", features = ["incl_io", "use_ron", "use_glob"] }
 tap = "1.0.1"
 log = "0.4.28"
-fstdout-logger = "0.1.1"
+env_logger = "0.11.8"
 thiserror = "2.0.16"
+clap = { version = "4.5.47", features = ["cargo"] }
+pulldown-cmark-to-cmark = "21.0.0"
