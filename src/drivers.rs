@@ -87,3 +87,50 @@ pub fn process_markdown_files_in_vault(
         }
     }
 }
+
+pub const ANSI_ESCAPE_COLOR_GREEN: &str = "\x1b[32m";
+pub const ANSI_ESCAPE_COLOR_RED: &str = "\x1b[31m";
+pub const ANSI_ESCAPE_COLOR_YELLOW: &str = "\x1b[33m";
+pub const ANSI_ESCAPE_COLOR_BG_RED: &str = "\x1b[41m";
+pub const ANSI_ESCAPE_COLOR_BG_GREEN: &str = "\x1b[42m";
+pub const ANSI_ESCAPE_COLOR_BG_YELLOW: &str = "\x1b[43m";
+pub const ANSI_ESCAPE_RESET: &str = "\x1b[0m";
+
+pub enum DisplayDiffFrom {
+    Chars,
+    Words,
+    Lines,
+}
+
+impl Default for DisplayDiffFrom {
+    fn default() -> Self {
+        Self::Words
+    }
+}
+
+pub fn display_diff(old: &str, new: &str, from: DisplayDiffFrom) {
+    let diff = match from {
+        DisplayDiffFrom::Chars => similar::TextDiff::from_chars(old, new),
+        DisplayDiffFrom::Words => similar::TextDiff::from_words(old, new),
+        DisplayDiffFrom::Lines => similar::TextDiff::from_lines(old, new),
+    };
+
+    for change in diff.iter_all_changes() {
+        let s = change.value();
+
+        match change.tag() {
+            similar::ChangeTag::Equal => {
+                // log::trace!("0 .");
+                print!("{ANSI_ESCAPE_COLOR_BG_YELLOW}{s}{ANSI_ESCAPE_RESET}");
+            }
+            similar::ChangeTag::Delete => {
+                // log::trace!("2 -");
+                print!("{ANSI_ESCAPE_COLOR_BG_RED}{s}{ANSI_ESCAPE_RESET}");
+            }
+            similar::ChangeTag::Insert => {
+                // log::trace!("1 +");
+                print!("{ANSI_ESCAPE_COLOR_BG_GREEN}{s}{ANSI_ESCAPE_RESET}");
+            }
+        }
+    }
+}

@@ -8,7 +8,6 @@ use std::{
     str::FromStr,
 };
 use tap::prelude::*;
-use text_diff::diff;
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -164,57 +163,112 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
     old_content: &str,
     new_content: &str,
 ) -> String {
-    let (_, changeset) = diff(old_content, new_content, "");
+    let new_content1 = {
+        let mut mut_out = String::new();
 
-    let mut mut_out = String::new();
+        log::trace!("<new_content>\n{new_content}\n</new_content>");
 
-    for change in changeset {
-        match change {
-            text_diff::Difference::Same(s) => mut_out += &s,
-            text_diff::Difference::Add(s) => {
-                // In general, we want to add additions from new content. Some exceptions:
-                // - They add unnecessary escaping
-                // - They mess up frontmatter by adding `##` for the first property
-                // - In some instances, math is changes by removing `_` for `*`.
-                // - extra quote ">" lines are added and they shouldn't be
-                // - In case of subtask - [ ] , they may change them to - \[ ] with "- \\". This needs to be modified.
-                //   Note that this is for the setting of using "-" bullets for markdown rendering.
+        let diff = similar::TextDiff::from_words(old_content, new_content);
 
-                if s.trim() != "\\"
-                    && s.trim() != ""
-                    && s.trim() != "##"
-                    && s.trim() != "*"
-                    && s.trim() != ">"
-                    && s.trim() != "- \\"
-                {
-                    // log::trace!("+0 \"{s}\"");
-                    mut_out += &s;
-                } else if s.trim() == "- \\" {
-                    // log::trace!("+1 \"{s}\"");
-                    mut_out += &s.replace("\\", "");
-                } else {
-                    // log::trace!("+2 \"{s}\"");
+        for change in diff.iter_all_changes() {
+            let s = change.value();
+
+            match change.tag() {
+                similar::ChangeTag::Equal => mut_out += s,
+                similar::ChangeTag::Delete => {
+                    // In general, we don't want to be adding additions from old content. Some exceptions:
+                    // - Obsidian sometimes adds escaping. For example for obsidian link title bars in tables.
+                    // - Keep obsidian frontmatter "---" intact
+                    // - Keep `_` which may be added in math
+
+                    if s.trim() == "\\" || s.trim() == "_" {
+                        // log::trace!("-0 \"{s}\"");
+                        mut_out += s;
+                    } else if s.trim() == "---" {
+                        // log::trace!("-1 \"{s}\"");
+                        mut_out += "\n---"; // would be on same line as last prop without new line
+                    } else {
+                        // log::trace!("-2 \"{s}\"");
+                    }
                 }
-            }
-            text_diff::Difference::Rem(s) => {
-                // In general, we don't want to be adding additions from old content. Some exceptions:
-                // - Obsidian sometimes adds escaping. For example for obsidian link title bars in tables.
-                // - Keep obsidian frontmatter "---" intact
-                // - Keep `_` which may be added in math
+                similar::ChangeTag::Insert => {
+                    // In general, we want to add additions from new content. Some exceptions:
+                    // - They add unnecessary escaping
+                    // - They mess up frontmatter by adding `##` for the first property
+                    // - In some instances, math is changes by removing `_` for `*`.
+                    // - extra quote ">" lines are added and they shouldn't be
+                    // - In case of subtask - [ ] , they may change them to - \[ ] with "- \\". This needs to be modified.
+                    //   Note that this is for the setting of using "-" bullets for markdown rendering.
 
-                if s.trim() == "\\" || s.trim() == "---" || s.trim() == "_" {
-                    log::trace!("-0 \"{s}\"");
-                    mut_out += &s;
-                } else {
-                    log::trace!("-1 \"{s}\"");
+                    if s.trim() != "\\"
+                        && s.trim() != ""
+                        && s.trim() != "##"
+                        && s.trim() != "*"
+                        && s.trim() != ">"
+                        && s.trim() != "- \\"
+                        && s.trim() != "\\|"
+                    {
+                        // log::trace!("+0 \"{s}\"");
+                        mut_out += s;
+                    } else if s.trim() == "- \\" || s.trim() == "\\|" {
+                        // log::trace!("+1 \"{s}\"");
+                        mut_out += &s.replace("\\", "");
+                    } else if s.trim() == "" && s.contains("\n") {
+                        // log::trace!("+2 \"{s}\"");
+                        mut_out += "\n";
+                    } else {
+                        // log::trace!("+3 \"{s}\"");
+                    }
                 }
             }
         }
-    }
 
-    mut_out
-    // new_content.to_string()
-    // "".to_string()
+        mut_out
+    };
+
+    // Now we run a character diff processing on some remaining items
+    {
+        let mut mut_out = String::new();
+
+        log::trace!("<new_content1>\n{new_content1}\n</new_content1>");
+
+        let diff = similar::TextDiff::from_chars(old_content, &new_content1);
+
+        for change in diff.iter_all_changes() {
+            let s = change.value();
+
+            match change.tag() {
+                similar::ChangeTag::Equal => mut_out += s,
+                similar::ChangeTag::Delete => {
+                    // Remaining additions from old content include:
+                    // - Obsidian sometimes adds escaping. For example for obsidian link title bars in tables.
+
+                    if s.trim() == "\\" || s.trim() == "_" {
+                        // log::trace!("-0 \"{s}\"");
+                        mut_out += s;
+                    } else {
+                        // log::trace!("-1 \"{s}\"");
+                    }
+                }
+                similar::ChangeTag::Insert => {
+                    // Remaining additions from new content include:
+                    // - Removing escaped bars from obsidian links within tables (tested by: test_obsidian_patch_writeback table-002)
+
+                    if s.trim() != "\\" && s.trim() != "" && s.trim() != "*" && s.trim() != ">" {
+                        // log::trace!("+0 \"{s}\"");
+                        mut_out += s;
+                    } else if s.trim() == "" && s.contains("\n") {
+                        // log::trace!("+1 \"{s}\"");
+                        mut_out += "\n";
+                    } else {
+                        // log::trace!("+2 \"{s}\"");
+                    }
+                }
+            }
+        }
+
+        mut_out
+    }
 }
 
 pub fn parse_markdown_file<'a>(content: &'a str) -> Vec<Event<'a>> {
