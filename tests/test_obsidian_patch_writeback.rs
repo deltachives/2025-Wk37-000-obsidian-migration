@@ -15,7 +15,15 @@ pub fn init() {
 
 #[derive(Debug)]
 enum TestData<'a> {
-    Identical { name: &'a str, data: String },
+    Identical {
+        name: &'a str,
+        data: String,
+    },
+    Different {
+        name: &'a str,
+        data: String,
+        expected: String,
+    },
 }
 
 fn get_test_data<'a>() -> Vec<TestData<'a>> {
@@ -88,6 +96,40 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
             .replace("@ ", "")
             .replace("                    ", ""),
         },
+        TestData::Different {
+            name: "list-000",
+            data: r#"
+                    @ There is some text here.
+                    @
+                    @ *   **Some Text**: Some Description
+                    @ *   More Text
+                    @
+                    @ Something new
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+            expected: r#"
+                    @ There is some text here.
+                    @
+                    @ - **Some Text**: Some Description
+                    @ - More Text
+                    @
+                    @ Something new
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+        },
+        TestData::Identical {
+            name: "quote-000",
+            data: r#"
+                    @ > Quotes should be preserved!
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+        },
     ]
 }
 
@@ -114,6 +156,39 @@ fn test_obsidian_patch_writeback() {
                     println!("\n<old>");
                     println!("{data}");
                     println!("</old>\n");
+
+                    println!("\n<new>");
+                    println!("{new_data}");
+                    println!("</new>\n");
+
+                    drivers::display_diff(&data, &new_data, drivers::DisplayDiffFrom::default());
+
+                    panic!("data does not match");
+                }
+            }
+            TestData::Different {
+                name,
+                data,
+                expected,
+            } => {
+                let events = common::parse_markdown_file(&data);
+
+                let new_data = common::render_events_to_common_markdown(&events)
+                    .expect("Failed to render back to common markdown")
+                    .pipe(|new_data| {
+                        common::adhoc_fix_rendered_markdown_output_for_obsidian(&data, &new_data)
+                    });
+
+                if expected != new_data {
+                    println!("failed with test data: {name}");
+
+                    println!("\n<old>");
+                    println!("{data}");
+                    println!("</old>\n");
+
+                    println!("\n<expected>");
+                    println!("{expected}");
+                    println!("</expected>\n");
 
                     println!("\n<new>");
                     println!("{new_data}");

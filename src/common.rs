@@ -163,10 +163,14 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
     old_content: &str,
     new_content: &str,
 ) -> String {
+    fn log_(_s: &str) {
+        // log::trace!("{}", s)
+    }
+
     let new_content1 = {
         let mut mut_out = String::new();
 
-        log::trace!("<new_content>\n{new_content}\n</new_content>");
+        log_(&format!("<new_content>\n{new_content}\n</new_content>"));
 
         let diff = similar::TextDiff::from_words(old_content, new_content);
 
@@ -182,13 +186,13 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
                     // - Keep `_` which may be added in math
 
                     if s.trim() == "\\" || s.trim() == "_" {
-                        // log::trace!("-0 \"{s}\"");
+                        log_(&format!("-0.0 \"{s}\""));
                         mut_out += s;
                     } else if s.trim() == "---" {
-                        // log::trace!("-1 \"{s}\"");
+                        log_(&format!("-0.1 \"{s}\""));
                         mut_out += "\n---"; // would be on same line as last prop without new line
                     } else {
-                        // log::trace!("-2 \"{s}\"");
+                        log_(&format!("-0.2 \"{s}\""));
                     }
                 }
                 similar::ChangeTag::Insert => {
@@ -196,28 +200,25 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
                     // - They add unnecessary escaping
                     // - They mess up frontmatter by adding `##` for the first property
                     // - In some instances, math is changes by removing `_` for `*`.
-                    // - extra quote ">" lines are added and they shouldn't be
                     // - In case of subtask - [ ] , they may change them to - \[ ] with "- \\". This needs to be modified.
                     //   Note that this is for the setting of using "-" bullets for markdown rendering.
 
                     if s.trim() != "\\"
                         && s.trim() != ""
                         && s.trim() != "##"
-                        && s.trim() != "*"
-                        && s.trim() != ">"
                         && s.trim() != "- \\"
                         && s.trim() != "\\|"
                     {
-                        // log::trace!("+0 \"{s}\"");
+                        log_(&format!("+0.0 \"{s}\""));
                         mut_out += s;
                     } else if s.trim() == "- \\" || s.trim() == "\\|" {
-                        // log::trace!("+1 \"{s}\"");
+                        log_(&format!("+0.1 \"{s}\""));
                         mut_out += &s.replace("\\", "");
                     } else if s.trim() == "" && s.contains("\n") {
-                        // log::trace!("+2 \"{s}\"");
+                        log_(&format!("+0.2 \"{s}\""));
                         mut_out += "\n";
                     } else {
-                        // log::trace!("+3 \"{s}\"");
+                        log_(&format!("+0.3 \"{s}\""));
                     }
                 }
             }
@@ -230,7 +231,7 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
     {
         let mut mut_out = String::new();
 
-        log::trace!("<new_content1>\n{new_content1}\n</new_content1>");
+        log_(&format!("<new_content1>\n{new_content1}\n</new_content1>"));
 
         let diff = similar::TextDiff::from_chars(old_content, &new_content1);
 
@@ -244,24 +245,31 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
                     // - Obsidian sometimes adds escaping. For example for obsidian link title bars in tables.
 
                     if s.trim() == "\\" || s.trim() == "_" {
-                        // log::trace!("-0 \"{s}\"");
+                        log_(&format!("-1.0 \"{s}\""));
                         mut_out += s;
                     } else {
-                        // log::trace!("-1 \"{s}\"");
+                        log_(&format!("-1.S \"{s}\""));
                     }
                 }
                 similar::ChangeTag::Insert => {
                     // Remaining additions from new content include:
                     // - Removing escaped bars from obsidian links within tables (tested by: test_obsidian_patch_writeback table-002)
+                    // - extra quote ">" lines are added and they shouldn't be
+                    // - Sometimes when * bullets are replaced for dashes, a space is not inserted.
 
-                    if s.trim() != "\\" && s.trim() != "" && s.trim() != "*" && s.trim() != ">" {
-                        // log::trace!("+0 \"{s}\"");
+                    if s.trim() != "\\"
+                        && s.trim() != ""
+                        && s.trim() != "*"
+                        && s.trim() != ">"
+                        && s.trim() != "-"
+                    {
+                        log_(&format!("+1.0 \"{s}\""));
                         mut_out += s;
-                    } else if s.trim() == "" && s.contains("\n") {
-                        // log::trace!("+1 \"{s}\"");
-                        mut_out += "\n";
+                    } else if s.trim() == "-" {
+                        log_(&format!("+1.1 \"{s}\""));
+                        mut_out += "- ";
                     } else {
-                        // log::trace!("+2 \"{s}\"");
+                        log_(&format!("+1.S \"{s}\""));
                     }
                 }
             }
