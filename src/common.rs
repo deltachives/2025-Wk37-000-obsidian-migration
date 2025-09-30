@@ -164,18 +164,24 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
     new_content: &str,
 ) -> String {
     fn log_(_s: &str) {
-        // log::trace!("{}", s)
+        log::trace!("{}", _s)
     }
 
     let new_content1 = {
         let mut mut_out = String::new();
 
+        log_(&format!("<old_content>\n{old_content}\n</old_content>"));
         log_(&format!("<new_content>\n{new_content}\n</new_content>"));
 
         let diff = similar::TextDiff::from_words(old_content, new_content);
 
         for change in diff.iter_all_changes() {
             let s = change.value();
+
+            let disp_s = s
+                .replace("\t", "\\t")
+                .replace("\n", "\\n")
+                .replace(" ", "\\s");
 
             match change.tag() {
                 similar::ChangeTag::Equal => mut_out += s,
@@ -186,13 +192,13 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
                     // - Keep `_` which may be added in math
 
                     if s.trim() == "\\" || s.trim() == "_" {
-                        log_(&format!("-0.0 \"{s}\""));
+                        log_(&format!("-0.0 \"{disp_s}\" len: {}", s.len()));
                         mut_out += s;
                     } else if s.trim() == "---" {
-                        log_(&format!("-0.1 \"{s}\""));
+                        log_(&format!("-0.1 \"{disp_s}\" len: {}", s.len()));
                         mut_out += "\n---"; // would be on same line as last prop without new line
                     } else {
-                        log_(&format!("-0.2 \"{s}\""));
+                        log_(&format!("-0.2 S \"{disp_s}\" len: {}", s.len()));
                     }
                 }
                 similar::ChangeTag::Insert => {
@@ -209,16 +215,16 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
                         && s.trim() != "- \\"
                         && s.trim() != "\\|"
                     {
-                        log_(&format!("+0.0 \"{s}\""));
+                        log_(&format!("+0.0 \"{disp_s}\" len: {}", s.len()));
                         mut_out += s;
                     } else if s.trim() == "- \\" || s.trim() == "\\|" {
-                        log_(&format!("+0.1 \"{s}\""));
+                        log_(&format!("+0.1 \"{disp_s}\" len: {}", s.len()));
                         mut_out += &s.replace("\\", "");
                     } else if s.trim() == "" && s.contains("\n") {
-                        log_(&format!("+0.2 \"{s}\""));
-                        mut_out += "\n";
+                        log_(&format!("+0.2 \"{disp_s}\" len: {}", s.len()));
+                        mut_out += &s.replace(" ", "").replace("\t", "");
                     } else {
-                        log_(&format!("+0.3 \"{s}\""));
+                        log_(&format!("+0.3 S \"{disp_s}\" len: {}", s.len()));
                     }
                 }
             }
@@ -238,6 +244,11 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
         for change in diff.iter_all_changes() {
             let s = change.value();
 
+            let disp_s = s
+                .replace("\t", "\\t")
+                .replace("\n", "\\n")
+                .replace(" ", "\\s");
+
             match change.tag() {
                 similar::ChangeTag::Equal => mut_out += s,
                 similar::ChangeTag::Delete => {
@@ -245,10 +256,10 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
                     // - Obsidian sometimes adds escaping. For example for obsidian link title bars in tables.
 
                     if s.trim() == "\\" || s.trim() == "_" {
-                        log_(&format!("-1.0 \"{s}\""));
+                        log_(&format!("-1.0 \"{disp_s}\" len: {}", s.len()));
                         mut_out += s;
                     } else {
-                        log_(&format!("-1.S \"{s}\""));
+                        log_(&format!("-1.1 S \"{disp_s}\" len: {}", s.len()));
                     }
                 }
                 similar::ChangeTag::Insert => {
@@ -263,13 +274,13 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
                         && s.trim() != ">"
                         && s.trim() != "-"
                     {
-                        log_(&format!("+1.0 \"{s}\""));
+                        log_(&format!("+1.0 \"{disp_s}\" len: {}", s.len()));
                         mut_out += s;
                     } else if s.trim() == "-" {
-                        log_(&format!("+1.1 \"{s}\""));
+                        log_(&format!("+1.1 \"{disp_s}\" len: {}", s.len()));
                         mut_out += "- ";
                     } else {
-                        log_(&format!("+1.S \"{s}\""));
+                        log_(&format!("+1.2 S \"{disp_s}\" len: {}", s.len()));
                     }
                 }
             }

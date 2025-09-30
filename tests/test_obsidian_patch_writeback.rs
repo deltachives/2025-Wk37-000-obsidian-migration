@@ -121,10 +121,104 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
             .replace("@ ", "")
             .replace("                    ", ""),
         },
+
+        // Inner bullets are set to be 3 spaces with pulldown_cmark_to_cmark
+        TestData::Identical {
+            name: "list-001",
+            data: r#"
+                    @ 1. Some Item
+                    @    - And its description
+                    @ 2. Another Item
+                    @    - And another description
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+        },
+
+        // Nested bullets are expected to visually align after the "{n}. " of their parent numbered bullets
+        // This has expected rules in CommonMarkdown spec. See [list-items](https://spec.commonmark.org/0.31.2/#list-items).
+        TestData::Identical {
+            name: "list-002",
+            data: r#"
+                    @ 1. Item
+                    @    - Desc
+                    @ 2. Item
+                    @ 3. Item
+                    @ 4. Item
+                    @ 5. Item
+                    @ 6. Item
+                    @ 7. Item
+                    @ 8. Item
+                    @ 9. Item
+                    @ 10. Item
+                    @     - Desc
+                    @ 11. Item
+                    @ 12. Item
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+        },
+
         TestData::Identical {
             name: "quote-000",
             data: r#"
                     @ > Quotes should be preserved!
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+        },
+
+        // Note that pulldown_cmark does not give an event for the [^l2] line likely because it's unused.
+        TestData::Different {
+            name: "refs-000",
+            data: r#"
+                    @ # 1 Refs [^l1]
+                    @ [^l1]: https://www.google.com
+                    @ [^l2]: https://www.duckduckgo.com
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+            expected: r#"
+                    @ # 1 Refs [^l1]
+                    @ [^l1]: https://www.google.com
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+        },
+
+        // If the [^l1] line doesn't have a link, it will still be given as an event
+        TestData::Identical {
+            name: "refs-001",
+            data: r#"
+                    @ # 1 Refs
+                    @ [^l1]: Some Text
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+        },
+
+        // Unnecessary spacing at the end is trimmed, but lines should not collapse. We ran into an issue where
+        // the middle new line would be removed.
+        TestData::Different {
+            name: "spacing-000",
+            data: r#"
+                    @ Spawned by: [[Some Note]]
+                    @
+                    @ Spawned in: [[Some Note#^spawn-entry-000000|^spawn-entry-000000]]
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("                    ", ""),
+            expected: r#"
+                    @ Spawned by: [[Some Note]]
+                    @
+                    @ Spawned in: [[Some Note#^spawn-entry-000000|^spawn-entry-000000]]
                 "#
             .trim()
             .replace("@ ", "")
@@ -140,6 +234,19 @@ fn test_obsidian_patch_writeback() {
     let tds = get_test_data();
 
     for td in tds {
+        let manual_test_case_filtering_enabled = false;
+        let manual_test_case = "";
+
+        if manual_test_case_filtering_enabled {
+            match td {
+                TestData::Identical { name, .. } | TestData::Different { name, .. } => {
+                    if name != manual_test_case {
+                        continue;
+                    }
+                }
+            };
+        }
+
         match td {
             TestData::Identical { name, data } => {
                 let events = common::parse_markdown_file(&data);
@@ -152,6 +259,12 @@ fn test_obsidian_patch_writeback() {
 
                 if data != new_data {
                     println!("failed with test data: {name}");
+
+                    println!("\n<events>");
+                    for event in events.iter() {
+                        println!("{event:?}");
+                    }
+                    println!("</events>\n");
 
                     println!("\n<old>");
                     println!("{data}");
@@ -181,6 +294,12 @@ fn test_obsidian_patch_writeback() {
 
                 if expected != new_data {
                     println!("failed with test data: {name}");
+
+                    println!("\n<events>");
+                    for event in events.iter() {
+                        println!("{event:?}");
+                    }
+                    println!("</events>\n");
 
                     println!("\n<old>");
                     println!("{data}");
