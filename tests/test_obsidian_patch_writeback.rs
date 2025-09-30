@@ -37,8 +37,10 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
+
         TestData::Identical {
             name: "frontmatter-001",
             data: r#"
@@ -50,8 +52,10 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
+
         TestData::Identical {
             name: "table-000",
             data: r#"
@@ -64,8 +68,10 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
+
         TestData::Identical {
             name: "table-001",
             data: r#"
@@ -77,8 +83,10 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
+
         TestData::Identical {
             name: "table-002",
             data: r#"
@@ -94,8 +102,10 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
+
         TestData::Different {
             name: "list-000",
             data: r#"
@@ -108,6 +118,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
             expected: r#"
                     @ There is some text here.
@@ -119,6 +130,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
 
@@ -133,6 +145,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
 
@@ -158,6 +171,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
 
@@ -165,6 +179,95 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
             name: "quote-000",
             data: r#"
                     @ > Quotes should be preserved!
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("@", "")
+            .replace("                    ", ""),
+        },
+
+        // Presence of the block identifers changes the behavior here
+        TestData::Identical {
+            name: "quote-001",
+            data: r#"
+                    @ > dominant sequence transduction models
+                    @ >[[#^quote-paper]]
+                    @ ^keyword-000
+                    @
+                    @ > Achieving {N} BLEU on the WMT 2014 English-to-German translation task
+                    @ >[[#^quote-paper-paraphrase]]
+                    @ ^keyword-001
+                    @
+                    @ > sequence modeling and transduction problems such as language modeling and machine translation
+                    @ >[[#^quote-paper]]
+                    @ ^keyword-002
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("@", "")
+            .replace("                    ", ""),
+        },
+
+        // Need to use consistent spacing to avoid problems here with quotes
+        TestData::Identical {
+            name: "quote-002",
+            data: r#"
+                    @ > dominant sequence transduction models
+                    @ > [[#^quote-paper]]
+                    @
+                    @ > Achieving {N} BLEU on the WMT 2014 English-to-German translation task
+                    @ > [[#^quote-paper-paraphrase]]
+                    @
+                    @ > sequence modeling and transduction problems such as language modeling and machine translation
+                    @ > [[#^quote-paper]]
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("@", "")
+            .replace("                    ", ""),
+        },
+
+        TestData::Different {
+            name: "quote-003",
+            data: r#"
+                    @ > dominant sequence transduction models
+                    @ >[[#^quote-paper]]
+                    @ ^keyword-000
+                    @
+                    @ > Achieving {N} BLEU on the WMT 2014 English-to-German translation task
+                    @ >[[#^quote-paper-paraphrase]]
+                    @ ^keyword-001
+                    @
+                    @ > sequence modeling and transduction problems such as language modeling and machine translation
+                    @ > [[#^quote-paper]]
+                    @ ^keyword-002
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("@", "")
+            .replace("                    ", ""),
+            expected: r#"
+                    @ > dominant sequence transduction models
+                    @ >[[#^quote-paper]]
+                    @ ^keyword-000
+                    @
+                    @ > Achieving {N} BLEU on the WMT 2014 English-to-German translation task
+                    @ >[[#^quote-paper-paraphrase]]
+                    @ ^keyword-001
+                    @
+                    @ > sequence modeling and transduction problems such as language modeling and machine translation
+                    @ >[[#^quote-paper]]
+                    @ ^keyword-002
+                "#
+            .trim()
+            .replace("@ ", "")
+            .replace("@", "")
+            .replace("                    ", ""),
+        },
+
+        TestData::Identical {
+            name: "quote-003",
+            data: r#"
                 "#
             .trim()
             .replace("@ ", "")
@@ -181,6 +284,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
             expected: r#"
                     @ # 1 Refs [^l1]
@@ -188,6 +292,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
 
@@ -200,6 +305,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
 
@@ -214,6 +320,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
             expected: r#"
                     @ Spawned by: [[Some Note]]
@@ -222,6 +329,7 @@ fn get_test_data<'a>() -> Vec<TestData<'a>> {
                 "#
             .trim()
             .replace("@ ", "")
+            .replace("@", "")
             .replace("                    ", ""),
         },
     ]
@@ -276,7 +384,7 @@ fn test_obsidian_patch_writeback() {
 
                     drivers::display_diff(&data, &new_data, drivers::DisplayDiffFrom::default());
 
-                    panic!("data does not match");
+                    panic!("data does not match for test case: {name}");
                 }
             }
             TestData::Different {
@@ -293,7 +401,7 @@ fn test_obsidian_patch_writeback() {
                     });
 
                 if expected != new_data {
-                    println!("failed with test data: {name}");
+                    println!("failed with test case: {name}");
 
                     println!("\n<events>");
                     for event in events.iter() {
@@ -315,7 +423,7 @@ fn test_obsidian_patch_writeback() {
 
                     drivers::display_diff(&data, &new_data, drivers::DisplayDiffFrom::default());
 
-                    panic!("data does not match");
+                    panic!("data does not match for test case: {name}");
                 }
             }
         }

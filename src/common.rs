@@ -164,7 +164,7 @@ pub fn adhoc_fix_rendered_markdown_output_for_obsidian(
     new_content: &str,
 ) -> String {
     fn log_(_s: &str) {
-        log::trace!("{}", _s)
+        // log::trace!("{}", _s)
     }
 
     let new_content1 = {
