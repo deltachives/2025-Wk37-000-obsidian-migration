@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::common::{
-    self as comm, BlockIdentifier, CategorizedDirEntry, GetEventText, GetEventTextInternalError,
-    ObsidianLink, ObsidianLinkItem, ObsidianLinkableItem,
+    self as comm, BlockIdentifier, CategorizedDirEntry, GetAndCategorizeDirEntriesError,
+    GetEventText, GetEventTextInternalError, ObsidianLink, ObsidianLinkItem, ObsidianLinkableItem,
 };
 
 use itertools::Itertools;
@@ -14,39 +14,46 @@ use pulldown_cmark::{Event, HeadingLevel, Tag};
 use tap::prelude::*;
 use thiserror::Error;
 
-pub const NUM_EXPECTED_FOLDERS: usize = 7;
+pub const NUM_EXPECTED_FOLDERS: usize = 9;
 pub const _NUM_OLD_FORMAT_HEADINGS: usize = 6;
 
 pub const CONTEXT_TYPE_FOLDERS: [&str; NUM_EXPECTED_FOLDERS] = [
+    "concepts",
     "entries",
     "howtos",
     "ideas",
     "inferences",
     "investigations",
     "issues",
+    "judgments",
     "tasks",
 ];
 
-pub const CONTEXT_TYPE_BLOCK_IDENTIFIER_CODE: [&str; NUM_EXPECTED_FOLDERS] =
-    ["entry", "howto", "idea", "infer", "invst", "issue", "task"];
+pub const CONTEXT_TYPE_BLOCK_IDENTIFIER_CODE: [&str; NUM_EXPECTED_FOLDERS] = [
+    "cncpt", "entry", "howto", "idea", "infer", "invst", "issue", "jdgmt", "task",
+];
 
 pub const CONTEXT_TYPE_HEADINGS_SINGULAR: [&str; NUM_EXPECTED_FOLDERS] = [
+    "Concept",
     "Entry",
     "HowTo",
     "Idea",
     "Inference",
     "Investigation",
     "Issue",
+    "Judgment",
     "Task",
 ];
 
 pub const CONTEXT_TYPE_HEADINGS: [&str; NUM_EXPECTED_FOLDERS] = [
+    "Concepts",
     "Entries",
     "HowTos",
     "Ideas",
     "Inferences",
     "Investigations",
     "Issues",
+    "Judgments",
     "Tasks",
 ];
 
@@ -65,12 +72,14 @@ pub fn context_type_is_doer(context_type_id: usize) -> bool {
     }
 
     let doer_context_type_headings = [
+        // "Concepts",
         // "Entries",
         "HowTos",
         // "Ideas",
-        // "Inferences",
+        "Inferences",
         "Investigations",
         "Issues",
+        "Judgments",
         "Tasks",
     ];
 
@@ -179,12 +188,12 @@ pub fn is_normal_markdown_file_path(path: &Path) -> Option<bool> {
     Some(true)
 }
 
-#[derive(Debug)]
-pub struct ClusterRootFolderPath {
+#[derive(Debug, Clone)]
+pub struct ClusterFolderPath {
     pub path: PathBuf,
 }
 
-impl ClusterRootFolderPath {
+impl ClusterFolderPath {
     pub fn new(path: &Path) -> Option<Self> {
         if !is_cluster_root_folder(path)? {
             return None;
@@ -264,26 +273,76 @@ impl NormalNoteFilePath {
     }
 }
 
-pub fn get_core_note_file_from_cluster_root_folder(
-    cluster_root_folder: &ClusterRootFolderPath,
-) -> Option<CoreNoteFilePath> {
-    let dir_entries = comm::get_and_categorize_dir_entries(&cluster_root_folder.path).ok()?;
+#[derive(Error, Debug)]
+pub enum GetCoreNoteFileFromClusterFolderAssertError {
+    #[error("A valid cluster root folder path must have a core note file within: {0:?}")]
+    CouldNotGetCoreNotPath(ClusterFolderPath),
+}
+
+#[derive(Error, Debug)]
+pub enum GetCoreNoteFileFromClusterFolderError {
+    #[error("Failed to categorize dir entries: {0:?}")]
+    GetAndCategorizeDirEntriesError(#[from] GetAndCategorizeDirEntriesError),
+
+    #[error("Could not extract core note path in cluster root folder {0:?}")]
+    CouldNotExtactCoreNotePath(ClusterFolderPath),
+
+    #[error("Assert Error: {0:?}")]
+    AssertError(#[from] GetCoreNoteFileFromClusterFolderAssertError),
+}
+
+pub fn get_core_note_file_from_cluster_folder(
+    cluster_folder: &ClusterFolderPath,
+) -> Result<CoreNoteFilePath, GetCoreNoteFileFromClusterFolderError> {
+    type FnAssertErr = GetCoreNoteFileFromClusterFolderAssertError;
+    type FnErr = GetCoreNoteFileFromClusterFolderError;
+
+    let dir_entries = comm::get_and_categorize_dir_entries(&cluster_folder.path)?;
 
     let core_note_path = dir_entries
         .into_iter()
-        .find(|entry| matches!(entry, CategorizedDirEntry::File(_)))?
+        .find(|entry| matches!(entry, CategorizedDirEntry::File(_)))
+        .ok_or(FnAssertErr::CouldNotGetCoreNotPath(cluster_folder.clone()))?
         .pipe(|path| match path {
             CategorizedDirEntry::File(dir_entry) => Some(CoreNoteFilePath::new(&dir_entry.path())?),
             _ => None,
-        })?;
+        })
+        .ok_or(FnErr::CouldNotExtactCoreNotePath(cluster_folder.clone()))?;
 
-    Some(core_note_path)
+    Ok(core_note_path)
 }
 
-pub fn get_category_folders_with_peripheral_files_from_cluster_root_folder(
-    cluster_root_folder: &ClusterRootFolderPath,
-) -> Option<Vec<(ClusterCategoryFolderPath, Vec<PeripheralNoteFilePath>)>> {
-    let cluster_entries = comm::get_and_categorize_dir_entries(&cluster_root_folder.path).ok()?;
+#[derive(Error, Debug)]
+pub enum GetCategoryFoldersWithPeripheralFilesAssertError {
+    #[error("Category folder must only contain files within")]
+    CategoryFolderIncludesNonFiles(PathBuf),
+}
+
+#[derive(Error, Debug)]
+pub enum GetCategoryFoldersWithPeripheralFilesError {
+    #[error("Failed to categorize dir entries: {0:?}")]
+    GetAndCategorizeDirEntriesError(#[from] GetAndCategorizeDirEntriesError),
+
+    #[error("{0:?} is not a cluster category folder path")]
+    NotAClusterCategoryFolderPath(PathBuf),
+
+    #[error("{0:?} is not a peripheral note path")]
+    NotAPeripheralNotePath(PathBuf),
+
+    #[error("Assert error: {0:?}")]
+    AssertError(#[from] GetCategoryFoldersWithPeripheralFilesAssertError),
+}
+
+pub fn get_category_folders_with_peripheral_files(
+    cluster_root_folder: &ClusterFolderPath,
+) -> Result<
+    Vec<(ClusterCategoryFolderPath, Vec<PeripheralNoteFilePath>)>,
+    GetCategoryFoldersWithPeripheralFilesError,
+> {
+    type FnErr = GetCategoryFoldersWithPeripheralFilesError;
+    type FnAssertErr = GetCategoryFoldersWithPeripheralFilesAssertError;
+
+    let cluster_entries = comm::get_and_categorize_dir_entries(&cluster_root_folder.path)?;
 
     let category_folders_and_periphal_files = {
         let mut mut_category_folders_and_periphal_files = vec![];
@@ -292,27 +351,36 @@ pub fn get_category_folders_with_peripheral_files_from_cluster_root_folder(
             match cluster_entry {
                 CategorizedDirEntry::Dir(category_dir_entry) => {
                     let category_folder_path =
-                        ClusterCategoryFolderPath::new(&category_dir_entry.path())?;
+                        ClusterCategoryFolderPath::new(&category_dir_entry.path()).ok_or(
+                            FnErr::NotAClusterCategoryFolderPath(category_dir_entry.path()),
+                        )?;
 
                     let peripheral_note_files = {
                         let mut mut_peripheral_note_files = vec![];
 
                         // A category folder just has flat files in it.
                         let category_enries =
-                            comm::get_and_categorize_dir_entries(&category_dir_entry.path())
-                                .ok()?;
+                            comm::get_and_categorize_dir_entries(&category_dir_entry.path())?;
 
                         for category_entry in category_enries {
                             match category_entry {
                                 CategorizedDirEntry::File(dir_entry) => {
-                                    let peripheral_note_file =
-                                        PeripheralNoteFilePath::new(&dir_entry.path())?;
+                                    let peripheral_note_file = PeripheralNoteFilePath::new(
+                                        &dir_entry.path(),
+                                    )
+                                    .ok_or(FnErr::NotAPeripheralNotePath(dir_entry.path()))?;
 
                                     mut_peripheral_note_files.push(peripheral_note_file);
                                 }
 
                                 // There shouldn't be anything else
-                                _ => return None,
+                                _ => {
+                                    return Err(FnErr::AssertError(
+                                        FnAssertErr::CategoryFolderIncludesNonFiles(
+                                            category_dir_entry.path(),
+                                        ),
+                                    ));
+                                }
                             }
                         }
 
@@ -329,7 +397,7 @@ pub fn get_category_folders_with_peripheral_files_from_cluster_root_folder(
         mut_category_folders_and_periphal_files
     };
 
-    Some(category_folders_and_periphal_files)
+    Ok(category_folders_and_periphal_files)
 }
 
 /// Paths of consideration for updates in the vault
@@ -337,15 +405,29 @@ pub fn get_category_folders_with_peripheral_files_from_cluster_root_folder(
 pub enum WorkingPath {
     Note(NormalNoteFilePath),
     ClusterFolder {
-        cluster_root_folder: ClusterRootFolderPath,
+        cluster_root_folder: ClusterFolderPath,
         core_note_file: CoreNoteFilePath,
         category_folders_with_peripheral_files:
             Vec<(ClusterCategoryFolderPath, Vec<PeripheralNoteFilePath>)>,
     },
 }
 
-pub fn get_working_item_paths_recursive(folder: &Path) -> Option<Vec<WorkingPath>> {
-    let dir_entries = comm::get_and_categorize_dir_entries(folder).ok()?;
+#[derive(Error, Debug)]
+pub enum GetWorkingItemsError {
+    #[error("Failed to categorize dir entries: {0:?}")]
+    GetAndCategorizeDirEntriesError(#[from] GetAndCategorizeDirEntriesError),
+
+    #[error("Failed to get core note: {0:?}")]
+    GetCoreNoteFileError(#[from] GetCoreNoteFileFromClusterFolderError),
+
+    #[error("Failed to get category folders: {0:?}")]
+    GetCategoryFoldersError(#[from] GetCategoryFoldersWithPeripheralFilesError),
+}
+
+pub fn get_working_item_paths_recursive(
+    folder: &Path,
+) -> Result<Vec<WorkingPath>, GetWorkingItemsError> {
+    let dir_entries = comm::get_and_categorize_dir_entries(folder)?;
 
     let items = {
         let mut mut_items = vec![];
@@ -353,13 +435,15 @@ pub fn get_working_item_paths_recursive(folder: &Path) -> Option<Vec<WorkingPath
         for dir_entry in dir_entries {
             match dir_entry {
                 comm::CategorizedDirEntry::Dir(dir_entry) => {
-                    let opt_cluster_root_folder = ClusterRootFolderPath::new(&dir_entry.path());
+                    let opt_cluster_root_folder = ClusterFolderPath::new(&dir_entry.path());
 
                     match opt_cluster_root_folder {
                         Some(cluster_root_folder) => {
                             let core_note_file =
-                                get_core_note_file_from_cluster_root_folder(&cluster_root_folder)?;
-                            let category_folders_with_peripheral_files = get_category_folders_with_peripheral_files_from_cluster_root_folder(&cluster_root_folder)?;
+                                get_core_note_file_from_cluster_folder(&cluster_root_folder)?;
+
+                            let category_folders_with_peripheral_files =
+                                get_category_folders_with_peripheral_files(&cluster_root_folder)?;
 
                             mut_items.push(WorkingPath::ClusterFolder {
                                 cluster_root_folder,
@@ -387,12 +471,12 @@ pub fn get_working_item_paths_recursive(folder: &Path) -> Option<Vec<WorkingPath
         mut_items
     };
 
-    Some(items)
+    Ok(items)
 }
 
 pub fn get_working_item_paths_in_vault(
     vault_folder: &comm::ObsidianVaultPath,
-) -> Option<Vec<WorkingPath>> {
+) -> Result<Vec<WorkingPath>, GetWorkingItemsError> {
     get_working_item_paths_recursive(&vault_folder.path)
 }
 
@@ -792,7 +876,7 @@ pub fn turn_note_into_cluster_note(_path: &Path) -> Option<()> {
 }
 
 pub fn create_new_peripheral_note_from_old_format_entry<'a>(
-    _root: ClusterRootFolderPath,
+    _root: ClusterFolderPath,
     _entry: OldFormatEntry<'a>,
 ) {
     todo!()

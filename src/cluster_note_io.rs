@@ -117,7 +117,7 @@ pub fn turn_note_into_cluster_note(
 }
 
 pub fn create_new_peripheral_note_from_old_format_entry<'a>(
-    _root: ClusterRootFolderPath,
+    _root: ClusterFolderPath,
     _entry: OldFormatEntry<'a>,
 ) {
     todo!()

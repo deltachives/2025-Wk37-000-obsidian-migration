@@ -81,6 +81,14 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
             return Some(());
         }
 
+        // TODO: Temporary for debugging
+        if let Some(filename) = path.file_name()
+            && let Some(s) = filename.to_str()
+            && !s.contains("Attention is all you need")
+        {
+            return Some(());
+        }
+
         info!("processing {path:?}");
 
         let content = common::read_file_content(path).expect("Could not read content");
