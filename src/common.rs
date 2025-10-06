@@ -600,30 +600,46 @@ pub fn extract_linkable_obsidian_md_items<'a>(
         })
         .collect::<Vec<_>>();
 
-    let block_identifier_items = events
-        .iter()
-        .flat_map(|event| match event {
-            Event::Text(cow_str) => {
-                let rev_caret_pos = cow_str.chars().rev().position(|c| c == '^')?;
+    let block_identifier_items = {
+        let mut mut_code_block_open = false;
 
-                let len = cow_str.chars().count();
+        events
+            .iter()
+            .flat_map(|event| match event {
+                Event::Text(cow_str) => {
+                    if mut_code_block_open {
+                        return None;
+                    }
 
-                let block_identifier = cow_str
-                    .chars()
-                    .skip(len - rev_caret_pos)
-                    .join("")
-                    .pipe(|s| BlockIdentifier::from_str(&s))
-                    .ok()?;
+                    let rev_caret_pos = cow_str.chars().rev().position(|c| c == '^')?;
 
-                Some((event.clone(), block_identifier))
-            }
-            _ => None,
-        })
-        .map(|(event, block_identifier)| ObsidianLinkableItem {
-            item_data: ObsidianLinkableData::BlockIdentifier(block_identifier),
-            event,
-        })
-        .collect::<Vec<_>>();
+                    let len = cow_str.chars().count();
+
+                    let block_identifier = cow_str
+                        .chars()
+                        .skip(len - rev_caret_pos)
+                        .join("")
+                        .pipe(|s| BlockIdentifier::from_str(&s))
+                        .ok()?;
+
+                    Some((event.clone(), block_identifier))
+                }
+                Event::Start(Tag::CodeBlock(_)) => {
+                    mut_code_block_open = true;
+                    None
+                }
+                Event::End(TagEnd::CodeBlock) => {
+                    mut_code_block_open = false;
+                    None
+                }
+                _ => None,
+            })
+            .map(|(event, block_identifier)| ObsidianLinkableItem {
+                item_data: ObsidianLinkableData::BlockIdentifier(block_identifier),
+                event,
+            })
+            .collect::<Vec<_>>()
+    };
 
     {
         let mut mut_merged = vec![];
@@ -644,13 +660,21 @@ pub struct ObsidianLink {
 }
 
 #[derive(Error, Debug)]
+pub enum ObsidianLinkParseAssertError {
+    #[error("Already filtered for ]] but now not finding them")]
+    FilteredForEndBracketsMustBeFound,
+}
+
+#[derive(Error, Debug)]
 pub enum ObsidianLinkParseError {
     #[error("An obsidian link must start with [[ and end with ]]: {0:?}")]
-    NoBracketsFound(String),
+    NotEnclosedInBrackets(String),
     #[error("An obsidian link can only have one '#' denoting the sublink but found {0}: {1:?}")]
     MustHaveZeroOrOneHash(usize, String),
     #[error("An obsidian link can only have one '|' denoting the sublink but found {0}: {1:?}")]
     MustHaveZeroOrOneBar(usize, String),
+    #[error("Assert error: {0:?}")]
+    AssertError(#[from] ObsidianLinkParseAssertError),
 }
 
 impl FromStr for ObsidianLink {
@@ -658,7 +682,7 @@ impl FromStr for ObsidianLink {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if !s.starts_with("[[") || !s.ends_with("]]") {
-            return Err(ObsidianLinkParseError::NoBracketsFound(s.to_owned()));
+            return Err(ObsidianLinkParseError::NotEnclosedInBrackets(s.to_owned()));
         }
 
         let remaining_s = s.replace("[[", "").replace("]]", "");
@@ -731,20 +755,36 @@ impl FromStr for ObsidianLink {
     }
 }
 
+/// Once split by "[[", this parses the remaining to "]]", which is expected to exist
+pub fn get_obsidian_link_token_from_open_bracket_split(
+    s_split: &str,
+) -> Result<String, ObsidianLinkParseError> {
+    let s_split_chars = s_split.chars().collect_vec();
+
+    let end_idx = (0..s_split_chars.len())
+        .find(|i| {
+            if s_split_chars.len() <= i + 1 {
+                return false;
+            }
+
+            let s = s_split_chars[*i..i + 2].iter().join("");
+
+            s == "]]"
+        })
+        .ok_or(ObsidianLinkParseAssertError::FilteredForEndBracketsMustBeFound)?;
+
+    let stripped = s_split.chars().take(end_idx + "]]".len()).join("");
+
+    // It will already include ]], but we have to put the [[ back
+    Ok(format!("[[{stripped}"))
+}
+
 pub fn parse_multiple_obsidian_links(s: &str) -> Result<Vec<ObsidianLink>, ObsidianLinkParseError> {
     let tokens = s
         .split("[[")
         .filter(|s| s.contains("]]"))
-        .map(|s| {
-            let end_idx = s
-                .find("]]")
-                .expect("Assertion failed: Already filtered for ]]");
-
-            let stripped = s.chars().take(end_idx + "]]".len()).join("");
-
-            format!("[[{stripped}")
-        })
-        .collect::<Vec<_>>();
+        .map(get_obsidian_link_token_from_open_bracket_split)
+        .collect::<Result<Vec<_>, ObsidianLinkParseError>>()?;
 
     let links = tokens
         .iter()
@@ -778,18 +818,31 @@ pub enum ExtractOBsidianMdLinksError {
 pub fn extract_obsidian_md_links<'a>(
     events: &Vec<Event<'a>>,
 ) -> Result<Vec<ObsidianLinkItem<'a>>, ExtractOBsidianMdLinksError> {
+    let mut mut_code_block_tag_open = false;
+
     let extracted = events
         .iter()
         .map(|event| match event {
             Event::Text(cow_str) => {
-                let links = parse_multiple_obsidian_links(cow_str)
-                    .map_err(ExtractOBsidianMdLinksError::LinkExtractError)?;
+                if mut_code_block_tag_open {
+                    return Ok(None);
+                }
+
+                let links = parse_multiple_obsidian_links(cow_str)?;
 
                 if links.is_empty() {
                     return Ok(None);
                 }
 
                 Ok(Some((event.clone(), links)))
+            }
+            Event::Start(Tag::CodeBlock(_)) => {
+                mut_code_block_tag_open = true;
+                Ok(None)
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                mut_code_block_tag_open = false;
+                Ok(None)
             }
             _ => Ok(None),
         })
@@ -799,4 +852,238 @@ pub fn extract_obsidian_md_links<'a>(
         .collect::<Result<Vec<_>, ExtractOBsidianMdLinksError>>()?;
 
     Ok(extracted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Once;
+
+    static G_INIT_ONCE: Once = Once::new();
+
+    pub fn init() {
+        G_INIT_ONCE.call_once(|| {
+            crate::drivers::init_logging_with_level(log::LevelFilter::Trace);
+        });
+    }
+
+    #[derive(Debug)]
+    enum TestData<'a> {
+        Identical {
+            name: &'a str,
+            given: String,
+        },
+        Different {
+            name: &'a str,
+            given: String,
+            expected: String,
+        },
+        Multiple {
+            name: &'a str,
+            given: String,
+            expected: Vec<String>,
+        },
+    }
+
+    fn get_test_data_for_get_obsidian_link_token_from_open_bracket_split<'a>() -> Vec<TestData<'a>>
+    {
+        vec![
+            TestData::Identical {
+                name: "case-000",
+                given: r#"
+                        @ [[beep]]
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+            },
+            TestData::Different {
+                name: "case-001",
+                given: r#"
+                        @ [[beep]],
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected: r#"
+                        @ [[beep]]
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+            },
+            TestData::Multiple {
+                name: "case-002",
+                given: r#"
+                        @ [[A]] [[B]] and then some...
+                        @ [[C]]
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected: vec![
+                    r#"
+                        @ [[A]]
+                    "#
+                    .trim()
+                    .replace("@ ", "")
+                    .replace("@", "")
+                    .replace("                        ", ""),
+                    r#"
+                        @ [[B]]
+                    "#
+                    .trim()
+                    .replace("@ ", "")
+                    .replace("@", "")
+                    .replace("                        ", ""),
+                    r#"
+                        @ [[C]]
+                    "#
+                    .trim()
+                    .replace("@ ", "")
+                    .replace("@", "")
+                    .replace("                        ", ""),
+                ],
+            },
+            TestData::Different {
+                name: "case-003-000",
+                given: r#"
+                        @ [[老]],
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected: r#"
+                        @ [[老]]
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+            },
+            TestData::Different {
+                name: "case-003",
+                given: r#"
+                        @ [[Löwe 老虎 Léopard Gepardi]],
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected: r#"
+                        @ [[Löwe 老虎 Léopard Gepardi]]
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+            },
+        ]
+    }
+
+    #[test]
+    fn test_get_obsidian_link_token_from_open_bracket_split() {
+        init();
+
+        for td in get_test_data_for_get_obsidian_link_token_from_open_bracket_split() {
+            match td {
+                TestData::Identical { name, given } => {
+                    let tokens = given
+                        .split("[[")
+                        .filter(|s| s.contains("]]"))
+                        .map(get_obsidian_link_token_from_open_bracket_split)
+                        .collect::<Result<Vec<_>, ObsidianLinkParseError>>()
+                        .unwrap_or_else(|e| panic!("{name}: Failed to tokenize: {e}"));
+
+                    if tokens.len() != 1 {
+                        panic!("{name}: There should be exactly one token found")
+                    }
+
+                    if tokens[0] != given {
+                        println!("\n<given>");
+                        println!("{given}");
+                        println!("</given>\n");
+
+                        println!("\n<actual>");
+                        println!("{}", tokens[0]);
+                        println!("</actual>\n");
+
+                        panic!("{name}: Not identical with given");
+                    }
+                }
+                TestData::Different {
+                    name,
+                    given,
+                    expected,
+                } => {
+                    let tokens = given
+                        .split("[[")
+                        .filter(|s| s.contains("]]"))
+                        .map(get_obsidian_link_token_from_open_bracket_split)
+                        .collect::<Result<Vec<_>, ObsidianLinkParseError>>()
+                        .unwrap_or_else(|e| panic!("{name}: Failed to tokenize: {e}"));
+
+                    if tokens.len() != 1 {
+                        panic!("{name}: There should be exactly one token found")
+                    }
+
+                    if tokens[0] != expected {
+                        println!("\n<given>");
+                        println!("{given}");
+                        println!("</given>\n");
+
+                        println!("\n<expected>");
+                        println!("{expected}");
+                        println!("</expected>\n");
+
+                        println!("\n<actual>");
+                        println!("{}", tokens[0]);
+                        println!("</actual>\n");
+
+                        panic!("{name}: Output is not as expected");
+                    }
+                }
+
+                TestData::Multiple {
+                    name,
+                    given,
+                    expected,
+                } => {
+                    let tokens = given
+                        .split("[[")
+                        .filter(|s| s.contains("]]"))
+                        .map(get_obsidian_link_token_from_open_bracket_split)
+                        .collect::<Result<Vec<_>, ObsidianLinkParseError>>()
+                        .unwrap_or_else(|e| panic!("{name}: Failed to tokenize: {e}"));
+
+                    if tokens.len() != expected.len() {
+                        panic!("{name}: There should be exactly {} found", expected.len())
+                    }
+
+                    for (actual, expected) in tokens.iter().zip(expected.iter()) {
+                        if actual != expected {
+                            println!("\n<given>");
+                            println!("{given}");
+                            println!("</given>\n");
+
+                            println!("\n<expected>");
+                            println!("{expected}");
+                            println!("</expected>\n");
+
+                            println!("\n<actual>");
+                            println!("{actual}");
+                            println!("</actual>\n");
+
+                            panic!("{name}: Output is not as expected");
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

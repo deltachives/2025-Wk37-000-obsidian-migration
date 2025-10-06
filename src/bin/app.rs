@@ -81,6 +81,8 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
             return Some(());
         }
 
+        info!("processing {path:?}");
+
         let content = common::read_file_content(path).expect("Could not read content");
 
         let events = common::parse_markdown_file(&content);
@@ -112,9 +114,12 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
             .filter(|event| !all_old_format_events.contains(event))
             .collect::<Vec<_>>();
 
-        let new_content =
+        let new_content_without_old_format_records =
             common::render_events_to_common_markdown(&events_excluding_old_format_records)
-                .expect("Failed to render back to common markdown");
+                .expect("Failed to render back to common markdown")
+                .pipe(|new_data| {
+                    common::adhoc_fix_rendered_markdown_output_for_obsidian(&content, &new_data)
+                });
 
         let core_note_path = {
             let opt_core_note_path = CoreNoteFilePath::new(path);
@@ -126,10 +131,13 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
             }
         };
 
-        common::write_file_content(&new_content, &core_note_path.path)
-            .expect("Failed to write file content");
+        common::write_file_content(
+            &new_content_without_old_format_records,
+            &core_note_path.path,
+        )
+        .expect("Failed to write file content");
 
-        // Remove all spawned events before writing the new entries to file
+        // Remove all "From ..." spawned events before writing the new entries to file
 
         // Write the entries to file, and parent, then if available, spawned by/spawned in paths
 
