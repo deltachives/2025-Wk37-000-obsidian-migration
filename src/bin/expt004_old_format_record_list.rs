@@ -2,9 +2,9 @@ use migration_rs::*;
 use std::path::Path;
 
 fn main() {
-    drivers::init_logging_with_level(log::LevelFilter::Trace);
+    drivers::init_logging_with_level_or_fail(log::LevelFilter::Trace);
 
-    let vault_folder = drivers::get_obsidian_vault(1);
+    let vault_folder = drivers::get_obsidian_vault_or_fail(1);
     let opt_note_path = drivers::get_opt_arg_note_path(2);
 
     let process_markdown_file = |path: &Path, only_summarize: bool| -> Option<()> {

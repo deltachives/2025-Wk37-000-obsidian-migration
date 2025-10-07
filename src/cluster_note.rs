@@ -66,6 +66,29 @@ pub const OLD_FORMAT_HEADINGS: [&str; _NUM_OLD_FORMAT_HEADINGS] = [
     "Side Notes",
 ];
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OldFormatEntryType {
+    Task,
+    Issue,
+    HowTo,
+    Investigation,
+    Idea,
+    SideNote,
+}
+
+impl OldFormatEntryType {
+    pub fn to_context_type_folder(&self) -> &'static str {
+        match self {
+            OldFormatEntryType::Task => "tasks",
+            OldFormatEntryType::Issue => "issues",
+            OldFormatEntryType::HowTo => "howtos",
+            OldFormatEntryType::Investigation => "investigations",
+            OldFormatEntryType::Idea => "ideas",
+            OldFormatEntryType::SideNote => "entries",
+        }
+    }
+}
+
 pub fn context_type_is_doer(context_type_id: usize) -> bool {
     if context_type_id > NUM_EXPECTED_FOLDERS {
         return false;
@@ -528,17 +551,7 @@ pub fn get_cluster_core_file_from_peripheral(
     CoreNoteFilePath::new(&path)
 }
 
-#[derive(Debug, Clone)]
-pub enum OldFormatEntryType {
-    Task,
-    Issue,
-    HowTo,
-    Investigation,
-    Idea,
-    SideNote,
-}
-
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum OldFormatEntryTypeFromStrError {
     #[error("Invalid type provided: {0:?}")]
     InvalidType(String),
@@ -588,6 +601,247 @@ pub fn strip_autonumbered_sections(s: &str) -> String {
     }
 
     s.replace(potential_segt, "")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OldFormatEntryContent {
+    pub entry_type: OldFormatEntryType,
+    pub entry_name: String,
+    pub content: String,
+}
+
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum GetNoteOldFormatEntriesFromContentError {
+    #[error("Invalid entry type read: {0:?}")]
+    InvalidEntryType(#[from] OldFormatEntryTypeFromStrError),
+
+    #[error("Tried to parse old entry records but could not infer placement: {0} {1:?}")]
+    EventTypeAndNameNotConfigured(usize, String),
+}
+
+pub fn get_note_old_format_entries_from_content(
+    content: &str,
+) -> Result<(String, Vec<OldFormatEntryContent>), GetNoteOldFormatEntriesFromContentError> {
+    type FnErr = GetNoteOldFormatEntriesFromContentError;
+
+    // First we'll split the content lines into three categories, an H1 line, an H2 line, and any
+    // other line will be treated as content
+
+    #[derive(Debug)]
+    enum Grouped<'a> {
+        H1(&'a str),
+        H2(&'a str),
+        Content(Vec<&'a str>),
+    }
+
+    let grouped_lines = {
+        let mut mut_grouped_lines: Vec<Grouped> = vec![];
+        let mut mut_last_content_group: Vec<&str> = vec![];
+        let mut mut_in_codeblock = false;
+
+        for line in content.lines() {
+            if mut_in_codeblock {
+                let codeblock_ticks_count = comm::count_substrings(line, "```");
+
+                if codeblock_ticks_count % 2 == 1 {
+                    mut_in_codeblock ^= true;
+                }
+
+                mut_last_content_group.push(line);
+            } else if line.starts_with("# ") {
+                if !mut_last_content_group.is_empty() {
+                    mut_grouped_lines.push(Grouped::Content(mut_last_content_group.clone()));
+                    mut_last_content_group = vec![];
+                }
+
+                mut_grouped_lines.push(Grouped::H1(line))
+            } else if line.starts_with("## ") {
+                if !mut_last_content_group.is_empty() {
+                    mut_grouped_lines.push(Grouped::Content(mut_last_content_group.clone()));
+                    mut_last_content_group = vec![];
+                }
+
+                mut_grouped_lines.push(Grouped::H2(line))
+            } else {
+                let codeblock_ticks_count = comm::count_substrings(line, "```");
+
+                if codeblock_ticks_count % 2 == 1 {
+                    mut_in_codeblock ^= true;
+                }
+
+                mut_last_content_group.push(line);
+            }
+        }
+
+        if !mut_last_content_group.is_empty() {
+            mut_grouped_lines.push(Grouped::Content(mut_last_content_group.clone()));
+        }
+
+        mut_grouped_lines
+    };
+
+    log::trace!("");
+    log::trace!("grouped_lines: {grouped_lines:?}");
+
+    // Then we will filter the groups for ones relevant for the old format entries
+
+    let (entry_grouped_lines, non_entry_grouped_lines) = {
+        let mut mut_entry_grouped_lines = vec![];
+        let mut mut_non_entry_grouped_lines = vec![];
+        let mut mut_last_h1_was_a_context_type = false;
+
+        for grouped in grouped_lines {
+            match grouped {
+                Grouped::H1(line) => {
+                    let heading = line
+                        .replace("# ", "")
+                        .pipe(|heading| strip_autonumbered_sections(&heading))
+                        .trim()
+                        .to_owned();
+
+                    let is_old_fomat_category = OLD_FORMAT_HEADINGS.contains(&heading.as_str());
+
+                    if is_old_fomat_category {
+                        mut_entry_grouped_lines.push(Grouped::H1(line));
+                    } else {
+                        mut_non_entry_grouped_lines.push(Grouped::H1(line));
+                    }
+
+                    mut_last_h1_was_a_context_type = is_old_fomat_category;
+                }
+                Grouped::H2(line) => {
+                    if mut_last_h1_was_a_context_type {
+                        mut_entry_grouped_lines.push(Grouped::H2(line));
+                    } else {
+                        mut_non_entry_grouped_lines.push(Grouped::H2(line));
+                    }
+                }
+                Grouped::Content(lines) => {
+                    if mut_last_h1_was_a_context_type {
+                        mut_entry_grouped_lines.push(Grouped::Content(lines));
+                    } else {
+                        mut_non_entry_grouped_lines.push(Grouped::Content(lines));
+                    }
+                }
+            }
+        }
+
+        (mut_entry_grouped_lines, mut_non_entry_grouped_lines)
+    };
+
+    log::trace!("entry_grouped_lines: {entry_grouped_lines:?}");
+    log::trace!("non_entry_grouped_lines: {non_entry_grouped_lines:?}");
+
+    // Then we will extract the entry type/name/content for the old format entries by sequential processing
+
+    fn push_old_format_record(
+        entry_type_s: &str,
+        entry_name: &str,
+        content: &str,
+        mut_old_format_records: &mut Vec<OldFormatEntryContent>,
+    ) -> Result<(), FnErr> {
+        let entry_type =
+            OldFormatEntryType::from_str(entry_type_s).map_err(FnErr::InvalidEntryType)?;
+
+        mut_old_format_records.push(OldFormatEntryContent {
+            entry_type,
+            entry_name: entry_name.to_owned(),
+            content: content.to_owned(),
+        });
+
+        Ok(())
+    }
+
+    let old_format_records_res: Result<Vec<OldFormatEntryContent>, FnErr> = {
+        let mut mut_old_format_records = vec![];
+        let mut mut_opt_last_category_type = None;
+        let mut mut_opt_last_entry_name: Option<String> = None;
+
+        for grouped in entry_grouped_lines {
+            match grouped {
+                Grouped::H1(line) => {
+                    mut_opt_last_category_type = line
+                        .replace("# ", "")
+                        .pipe(|heading| strip_autonumbered_sections(&heading))
+                        .trim()
+                        .to_owned()
+                        .pipe(Some);
+                }
+                Grouped::H2(line) => {
+                    // An entry with no content
+                    if let Some(entry_type_s) = &mut_opt_last_category_type
+                        && let Some(entry_name) = &mut_opt_last_entry_name
+                    {
+                        push_old_format_record(
+                            entry_type_s,
+                            entry_name,
+                            "",
+                            &mut mut_old_format_records,
+                        )?;
+                    }
+
+                    mut_opt_last_entry_name = line
+                        .replace("## ", "")
+                        .pipe(|heading| strip_autonumbered_sections(&heading))
+                        .trim()
+                        .to_owned()
+                        .pipe(Some);
+                }
+                Grouped::Content(items) => {
+                    if let Some(entry_type_s) = &mut_opt_last_category_type
+                        && let Some(entry_name) = &mut_opt_last_entry_name
+                    {
+                        push_old_format_record(
+                            entry_type_s,
+                            entry_name,
+                            &items.join("\n"),
+                            &mut mut_old_format_records,
+                        )?;
+
+                        mut_opt_last_entry_name = None;
+                    } else {
+                        let (content, first_item) = if !items.is_empty() {
+                            (items.join("\n"), items[0].to_owned())
+                        } else {
+                            ("".to_owned(), "".to_owned())
+                        };
+
+                        if !content.is_empty() {
+                            return Err(FnErr::EventTypeAndNameNotConfigured(
+                                items.len(),
+                                first_item.to_owned(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // A final entry with no content
+        if let Some(entry_type_s) = &mut_opt_last_category_type
+            && let Some(entry_name) = &mut_opt_last_entry_name
+        {
+            push_old_format_record(entry_type_s, entry_name, "", &mut mut_old_format_records)?;
+        }
+
+        Ok(mut_old_format_records)
+    };
+
+    let old_format_records = old_format_records_res?;
+
+    log::trace!("old_format_records: {:?}", old_format_records);
+
+    // Any grouped item that was not part of the relevant events remains in the note, so we will aggregate them
+
+    let remaining_content = non_entry_grouped_lines
+        .into_iter()
+        .flat_map(|grouped| match grouped {
+            Grouped::H1(line) | Grouped::H2(line) => vec![line],
+            Grouped::Content(lines) => lines,
+        })
+        .join("\n");
+
+    Ok((remaining_content, old_format_records))
 }
 
 #[derive(Debug, Clone)]
@@ -894,4 +1148,286 @@ pub fn redirect_links_to_new_peripheral_note(
 ) -> Option<()> {
     // Include Timeline strings too
     todo!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Once;
+
+    static G_INIT_ONCE: Once = Once::new();
+
+    fn init() {
+        G_INIT_ONCE.call_once(|| {
+            crate::drivers::try_init_logging_with_level(log::LevelFilter::Trace);
+        });
+    }
+
+    enum OldFormatEntryTestData<'a> {
+        Pass {
+            name: &'a str,
+            given: String,
+            expected_remaining: String,
+            expected_entries: Vec<OldFormatEntryContent>,
+        },
+
+        Fail {
+            name: &'a str,
+            given: String,
+            expected_error: GetNoteOldFormatEntriesFromContentError,
+        },
+    }
+
+    fn get_test_data_for_get_note_old_format_entries_from_content<'a>()
+    -> Vec<OldFormatEntryTestData<'a>> {
+        vec![
+            OldFormatEntryTestData::Pass {
+                name: "case-000",
+                given: r#"
+                        @ # AAA
+                        @ Some text...
+                        @ More text...
+                        @ ## AAA.0
+                        @ More text...
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_remaining: r#"
+                        @ # AAA
+                        @ Some text...
+                        @ More text...
+                        @ ## AAA.0
+                        @ More text...
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_entries: vec![],
+            },
+            OldFormatEntryTestData::Pass {
+                name: "case-001",
+                given: r#"
+                        @ # Journal
+                        @ Made some progress
+                        @ # Tasks
+                        @ ## Water plants
+                        @ There are many plants to water!
+                        @ ### Pend
+                        @ # Issues
+                        @ ## Internet not working
+                        @ ## Ethernet cable gives intermittent signal when tackled
+                        @ This doesn't happen when I use another ethernet cable!
+                        @ # References
+                        @ 1. Your favorite search engine
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_remaining: r#"
+                        @ # Journal
+                        @ Made some progress
+                        @ # References
+                        @ 1. Your favorite search engine
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_entries: vec![
+                    OldFormatEntryContent {
+                        entry_type: OldFormatEntryType::Task,
+                        entry_name: "Water plants".to_string(),
+                        content: r#"
+                        @ There are many plants to water!
+                        @ ### Pend
+                    "#
+                        .trim()
+                        .replace("@ ", "")
+                        .replace("@", "")
+                        .replace("                        ", ""),
+                    },
+                    OldFormatEntryContent {
+                        entry_type: OldFormatEntryType::Issue,
+                        entry_name: "Internet not working".to_string(),
+                        content: "".to_owned(),
+                    },
+                    OldFormatEntryContent {
+                        entry_type: OldFormatEntryType::Issue,
+                        entry_name: "Ethernet cable gives intermittent signal when tackled"
+                            .to_string(),
+                        content: r#"
+                        @ This doesn't happen when I use another ethernet cable!
+                    "#
+                        .trim()
+                        .replace("@ ", "")
+                        .replace("@", "")
+                        .replace("                        ", ""),
+                    },
+                ],
+            },
+            // An assumption is that content always belongs to H2 entries under H1 categories. Content belonging to the
+            // rest of document must be first followed by an H1 outside the old format categories, as is done in case-003.
+            OldFormatEntryTestData::Fail {
+                name: "case-003-000-fail",
+                given: r#"
+                        @ ## Tasks
+                        @ # Ideas
+                        @ # Investigations
+                        @ # Issues
+                        @ ``` 1
+                        @ # HowTos
+                        @ ``` 2
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_error:
+                    GetNoteOldFormatEntriesFromContentError::EventTypeAndNameNotConfigured(
+                        3,
+                        "``` 1".to_owned(),
+                    ),
+            },
+            OldFormatEntryTestData::Pass {
+                name: "case-003",
+                given: r#"
+                        @ ## Tasks
+                        @ # Ideas
+                        @ # Investigations
+                        @ # Issues
+                        @ # No more Entries
+                        @ ```
+                        @ # HowTos
+                        @ ```
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_remaining: r#"
+                        @ ## Tasks
+                        @ # No more Entries
+                        @ ```
+                        @ # HowTos
+                        @ ```
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_entries: vec![],
+            },
+            // Testing empty lines
+            OldFormatEntryTestData::Pass {
+                name: "case-004",
+                given: r#"
+                        @ # Journal
+                        @
+                        @ # Tasks
+                        @
+                        @ ## Water plants
+                        @
+                        @ There are many plants to water!
+                        @
+                        @ # References
+                        @ 1. Your favorite dictionary
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_remaining: r#"
+                        @ # Journal
+                        @
+                        @ # References
+                        @ 1. Your favorite dictionary
+                    "#
+                .trim()
+                .replace("@ ", "")
+                .replace("@", "")
+                .replace("                        ", ""),
+                expected_entries: vec![OldFormatEntryContent {
+                    entry_type: OldFormatEntryType::Task,
+                    entry_name: "Water plants".to_string(),
+                    content: r#"
+                        @
+                        @ There are many plants to water!
+                        @
+                    "#
+                    .trim()
+                    .replace("@ ", "")
+                    .replace("@", "")
+                    .replace("                        ", ""),
+                }],
+            },
+        ]
+    }
+
+    #[test]
+    fn test_get_note_old_format_entries_from_content() {
+        init();
+
+        for td in get_test_data_for_get_note_old_format_entries_from_content() {
+            match td {
+                OldFormatEntryTestData::Pass {
+                    name,
+                    given,
+                    expected_remaining,
+                    expected_entries,
+                } => {
+                    let (actual_remaining, actual_entries) =
+                        get_note_old_format_entries_from_content(&given)
+                            .unwrap_or_else(|e| panic!("{name}: Failed to get entries: {e:?}"));
+
+                    if actual_remaining != expected_remaining {
+                        println!("\n<given>\n{given}\n</given>");
+                        println!("\n<expected>\n{expected_remaining:?}\n</expected>");
+                        println!("\n<actual>\n{actual_remaining:?}\n</actual>");
+
+                        panic!("{name}: Remaining is not as expected");
+                    }
+
+                    if expected_entries.len() != actual_entries.len() {
+                        panic!(
+                            "{name}: Expected {} entries but got {}",
+                            expected_entries.len(),
+                            actual_entries.len()
+                        );
+                    }
+
+                    for (actual_entry, expected_entry) in
+                        actual_entries.iter().zip(expected_entries.iter())
+                    {
+                        if actual_entry != expected_entry {
+                            println!("\n<given>\n{given}\n</given>");
+                            println!("\n<expected>\n{expected_entry:?}\n</expected>");
+                            println!("\n<actual>\n{actual_entry:?}\n</actual>");
+
+                            panic!("{name}: Entries are not as expected");
+                        }
+                    }
+                }
+                OldFormatEntryTestData::Fail {
+                    name,
+                    given,
+                    expected_error,
+                } => {
+                    let actual_error = get_note_old_format_entries_from_content(&given)
+                        .expect_err(&format!("{name}: Expected to fail"));
+
+                    if actual_error != expected_error {
+                        println!("\n<given>\n{given}\n</given>");
+                        println!("\n<expected>\n{expected_error:?}\n</expected>");
+                        println!("\n<actual>\n{actual_error:?}\n</actual>");
+
+                        panic!("{name}: Errors are not as expected");
+                    }
+                }
+            }
+        }
+    }
 }

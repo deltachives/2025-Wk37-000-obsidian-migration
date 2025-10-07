@@ -5,7 +5,14 @@ use log::LevelFilter;
 
 use crate::{cluster_note, common::ObsidianVaultPath};
 
-pub fn init_logging_with_level(level: LevelFilter) {
+pub fn try_init_logging_with_level(level: LevelFilter) {
+    let _ = env_logger::builder()
+        .filter_level(level)
+        .filter_module("rustyline", LevelFilter::Warn)
+        .try_init();
+}
+
+pub fn init_logging_with_level_or_fail(level: LevelFilter) {
     env_logger::builder()
         .filter_level(level)
         .filter_module("rustyline", LevelFilter::Warn)
@@ -14,7 +21,7 @@ pub fn init_logging_with_level(level: LevelFilter) {
         .expect("Failed to initialize logger");
 }
 
-pub fn get_obsidian_vault(n: usize) -> ObsidianVaultPath {
+pub fn get_obsidian_vault_or_fail(n: usize) -> ObsidianVaultPath {
     let folder = args()
         .nth(n)
         .expect("Please provide a vault path")
@@ -24,7 +31,7 @@ pub fn get_obsidian_vault(n: usize) -> ObsidianVaultPath {
     ObsidianVaultPath::new(&folder).expect("Folder passed is not a valid obsidian vault")
 }
 
-pub fn get_arg_note_path(n: usize) -> PathBuf {
+pub fn get_arg_note_path_or_fail(n: usize) -> PathBuf {
     args()
         .nth(n)
         .expect("Please provide a note path")

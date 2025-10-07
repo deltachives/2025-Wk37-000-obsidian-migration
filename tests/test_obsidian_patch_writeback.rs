@@ -9,7 +9,7 @@ static G_INIT_ONCE: Once = Once::new();
 
 pub fn init() {
     G_INIT_ONCE.call_once(|| {
-        drivers::init_logging_with_level(log::LevelFilter::Trace);
+        drivers::init_logging_with_level_or_fail(log::LevelFilter::Trace);
     });
 }
 

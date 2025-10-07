@@ -4,9 +4,9 @@ use migration_rs::*;
 use pulldown_cmark::{Parser, TextMergeStream};
 
 fn main() {
-    drivers::init_logging_with_level(log::LevelFilter::Trace);
+    drivers::init_logging_with_level_or_fail(log::LevelFilter::Trace);
 
-    let path = drivers::get_arg_note_path(1);
+    let path = drivers::get_arg_note_path_or_fail(1);
 
     let content = common::read_file_content(&path).expect("Could not read file to string");
 

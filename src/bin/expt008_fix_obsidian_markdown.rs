@@ -3,7 +3,7 @@ use std::{env::args, path::PathBuf};
 use tap::prelude::*;
 
 fn main() {
-    drivers::init_logging_with_level(log::LevelFilter::Trace);
+    drivers::init_logging_with_level_or_fail(log::LevelFilter::Trace);
 
     let path = args()
         .nth(1)

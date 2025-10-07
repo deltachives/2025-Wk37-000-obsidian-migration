@@ -2,7 +2,7 @@ use migration_rs::*;
 use std::{env::args, path::PathBuf};
 
 fn main() {
-    drivers::init_logging_with_level(log::LevelFilter::Trace);
+    drivers::init_logging_with_level_or_fail(log::LevelFilter::Trace);
 
     let path1 = args()
         .nth(1)

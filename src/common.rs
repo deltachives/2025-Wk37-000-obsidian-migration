@@ -854,6 +854,13 @@ pub fn extract_obsidian_md_links<'a>(
     Ok(extracted)
 }
 
+pub fn count_substrings(s: &str, patt: &str) -> usize {
+    s.as_bytes()
+        .windows(patt.len())
+        .filter(|&w| w == patt.as_bytes())
+        .count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -863,7 +870,7 @@ mod tests {
 
     pub fn init() {
         G_INIT_ONCE.call_once(|| {
-            crate::drivers::init_logging_with_level(log::LevelFilter::Trace);
+            crate::drivers::try_init_logging_with_level(log::LevelFilter::Trace);
         });
     }
 

@@ -1,5 +1,9 @@
 use log::*;
-use migration_rs::{cluster_note::CoreNoteFilePath, common::ObsidianVaultPath, *};
+use migration_rs::{
+    cluster_note::{ClusterFolderPath, CoreNoteFilePath},
+    common::ObsidianVaultPath,
+    *,
+};
 use std::path::{Path, PathBuf};
 use tap::prelude::*;
 
@@ -82,12 +86,12 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
         }
 
         // TODO: Temporary for debugging
-        if let Some(filename) = path.file_name()
-            && let Some(s) = filename.to_str()
-            && !s.contains("Attention is all you need")
-        {
-            return Some(());
-        }
+        // if let Some(filename) = path.file_name()
+        //     && let Some(s) = filename.to_str()
+        //     && !s.contains("Attention is all you need")
+        // {
+        //     return Some(());
+        // }
 
         info!("processing {path:?}");
 
@@ -95,7 +99,9 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
 
         let events = common::parse_markdown_file(&content);
 
-        let old_format_records = cluster_note::get_note_old_format_entries(&events).ok()?;
+        let (remaining_content, old_format_records) =
+            cluster_note::get_note_old_format_entries_from_content(&content)
+                .expect("Failed to process old format entries from content");
 
         if old_format_records.is_empty() {
             return None;
@@ -111,24 +117,6 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
         // Are we in a cluster note already? if not, create one for this note by its name and replace its content
         // with content that includes no old entries
 
-        let all_old_format_events = old_format_records
-            .iter()
-            .flat_map(|old_format_entry| old_format_entry.events.clone())
-            .collect::<Vec<_>>();
-
-        let events_excluding_old_format_records = events
-            .clone()
-            .into_iter()
-            .filter(|event| !all_old_format_events.contains(event))
-            .collect::<Vec<_>>();
-
-        let new_content_without_old_format_records =
-            common::render_events_to_common_markdown(&events_excluding_old_format_records)
-                .expect("Failed to render back to common markdown")
-                .pipe(|new_data| {
-                    common::adhoc_fix_rendered_markdown_output_for_obsidian(&content, &new_data)
-                });
-
         let core_note_path = {
             let opt_core_note_path = CoreNoteFilePath::new(path);
 
@@ -139,11 +127,28 @@ fn app_extract_old_format_records(vault_path: &ObsidianVaultPath) {
             }
         };
 
-        common::write_file_content(
-            &new_content_without_old_format_records,
-            &core_note_path.path,
+        let cluster_folder_path = ClusterFolderPath::new(
+            core_note_path
+                .path
+                .parent()
+                .expect("core note must have a parent"),
         )
-        .expect("Failed to write file content");
+        .expect("Cluster folder must be known if core note is known");
+
+        common::write_file_content(&remaining_content, &core_note_path.path)
+            .expect("Failed to write file content");
+
+        // Write the extracted entries
+
+        for rec in old_format_records {
+            cluster_note_io::create_new_peripheral_note_from_old_format_entry(
+                &cluster_folder_path,
+                &rec,
+            )
+            .expect("Failed to create new peripheral note");
+        }
+
+        // Fixes in each file:
 
         // Remove all "From ..." spawned events before writing the new entries to file
 
@@ -165,7 +170,7 @@ fn main() {
         _ => LevelFilter::Off,
     });
 
-    drivers::init_logging_with_level(verbose);
+    drivers::init_logging_with_level_or_fail(verbose);
 
     match matches.subcommand() {
         Some(("writeback", sub_matches)) => {

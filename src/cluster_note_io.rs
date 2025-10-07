@@ -116,11 +116,77 @@ pub fn turn_note_into_cluster_note(
     Ok(out)
 }
 
-pub fn create_new_peripheral_note_from_old_format_entry<'a>(
-    _root: ClusterFolderPath,
-    _entry: OldFormatEntry<'a>,
-) {
-    todo!()
+#[derive(Error, Debug)]
+pub enum CreateNewPeripheralNoteFromOldFormatEntryError {
+    #[error("Got IO Error {0:?}")]
+    Io(PathBuf, std::io::Error),
+
+    #[error("Failed to get and categories directory entries: {0:?}")]
+    GetAndCategorizeDirEntriesError(#[from] crate::common::GetAndCategorizeDirEntriesError),
+
+    #[error("Category path must have only files, not {0:?}")]
+    DirEntyMustBeFile(crate::common::CategorizedDirEntry),
+}
+
+pub fn create_new_peripheral_note_from_old_format_entry(
+    cluster_folder_path: &ClusterFolderPath,
+    entry: &OldFormatEntryContent,
+) -> Result<(), CreateNewPeripheralNoteFromOldFormatEntryError> {
+    type FnErr = CreateNewPeripheralNoteFromOldFormatEntryError;
+
+    let category_path = {
+        let mut mut_category_path = cluster_folder_path.path.clone();
+
+        mut_category_path.push(entry.entry_type.to_context_type_folder());
+
+        mut_category_path
+    };
+
+    // Create the category folder if it doesn't exist
+
+    fs::create_dir_all(&category_path).map_err(|e| FnErr::Io(category_path.clone(), e))?;
+
+    // Count how many files exist there to determine the file name
+    let num_entries = {
+        let mut mut_num_entries: usize = 0;
+
+        let dir_entries = crate::common::get_and_categorize_dir_entries(&category_path)?;
+
+        for dir_entry in dir_entries {
+            match dir_entry {
+                crate::common::CategorizedDirEntry::File(_) => mut_num_entries += 1,
+                _ => return Err(FnErr::DirEntyMustBeFile(dir_entry)),
+            }
+        }
+
+        mut_num_entries
+    };
+
+    let num_entries_s = {
+        if num_entries < 10 {
+            format!("00{num_entries}")
+        } else if num_entries < 100 {
+            format!("0{num_entries}")
+        } else {
+            num_entries.to_string()
+        }
+    };
+
+    let peripheral_note_path = {
+        let mut mut_peripheral_note_path = category_path;
+
+        mut_peripheral_note_path.push(format!("{num_entries_s} {}.md", entry.entry_name));
+
+        mut_peripheral_note_path
+    };
+
+    crate::common::write_file_content(
+        &format!("\n# 1 Journal\n\n{}", entry.content),
+        &peripheral_note_path,
+    )
+    .map_err(|e| FnErr::Io(peripheral_note_path.clone(), e))?;
+
+    Ok(())
 }
 
 pub fn generate_index_for_core_note(_core_note: CoreNoteFilePath) -> Option<()> {
